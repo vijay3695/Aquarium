@@ -1,0 +1,14 @@
+{
+  "project": "AQUA//SIM",
+  "version": "1.0.0",
+  "approach": "100% procedural, zero external model/texture URLs",
+  "fish": {
+    "species": ["Neon Tetra", "Angelfish", "Fancy Goldfish"],
+    "count": 15,
+    "anatomy": ["ring-loft torso", "5-bone spine skeleton", "eyes", "gill covers", "upper/lower jaw", "forked caudal fin", "dorsal fin", "anal fin", "paired pectoral fins", "paired pelvic fins"],
+    "animation": ["spine sine undulation", "tail whip proportional to speed", "pectoral flutter", "gill pulse", "mouth snap", "banking roll"]
+  },
+  "systems": ["boids schooling", "predictive obstacle avoidance", "glass/floor/surface bounds", "food seek + eat", "tap-glass startle", "bubble buoyancy", "plant current sway", "oxygen pump", "daylight/moonlight"],
+  "shaderAssets": ["water surface", "caustics", "volumetric light cones", "plant sway", "underwater tint"],
+  "proceduralTextures": ["sand", "rock", "wood", "plant veins", "fin rays", "neon tetra stripes", "angelfish bands", "goldfish koi patches", "sponge pores"]
+}
