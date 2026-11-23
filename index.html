@@ -476,18 +476,24 @@ const plantTex = canvasTexture(256,256,(ctx,w,h)=>{
 
 const finTex = canvasTexture(256,256,(ctx,w,h)=>{
   // OPAQUE base so texture alpha never makes fins invisible
-  ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,w,h);
-  // fin rays (darker lines on opaque membrane)
-  ctx.strokeStyle='rgba(120,120,120,0.55)'; ctx.lineWidth=1.6;
-  for(let i=0;i<18;i++){
-    const y=(i/17)*h;
+  const bg=ctx.createLinearGradient(0,0,w,0);
+  bg.addColorStop(0,'#ffffff'); bg.addColorStop(1,'#e8e8e8');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,w,h);
+  // primary fin rays (branching spines)
+  for(let i=0;i<22;i++){
+    const y=(i/21)*h;
+    ctx.strokeStyle='rgba(90,90,90,0.6)'; ctx.lineWidth=1.8;
     ctx.beginPath(); ctx.moveTo(0,h/2);
-    ctx.quadraticCurveTo(w*0.5, y, w, y+(i%2?10:-10)); ctx.stroke();
+    ctx.quadraticCurveTo(w*0.45, y, w, y+(i%2?8:-8)); ctx.stroke();
+    // branch
+    ctx.strokeStyle='rgba(120,120,120,0.4)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(w*0.5,(h/2+y)/2);
+    ctx.lineTo(w, y+(i%2?16:-16)); ctx.stroke();
   }
-  ctx.strokeStyle='rgba(160,160,160,0.30)'; ctx.lineWidth=1;
-  for(let i=0;i<17;i++){
-    const y=(i/16)*h;
-    ctx.beginPath(); ctx.moveTo(w*0.1,h/2); ctx.lineTo(w, y); ctx.stroke();
+  // segmented membrane cross-lines
+  ctx.strokeStyle='rgba(150,150,150,0.25)'; ctx.lineWidth=0.8;
+  for(let x=w*0.2; x<w; x+=w*0.12){
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke();
   }
 });
 
@@ -686,17 +692,17 @@ const coneMat = new THREE.ShaderMaterial({
     varying vec2 vUv; varying vec3 vN; varying vec3 vV;
     void main(){
       float f=abs(dot(normalize(vN), normalize(vV)));
-      float a=pow(1.0-f,1.6);
-      float v=smoothstep(0.0,0.30,vUv.y)*smoothstep(1.0,0.55,vUv.y);
-      float fl=0.9+0.1*sin(uTime*2.0+vUv.y*10.0);
+      float a=pow(f,1.4);           /* soft center, fades at silhouette (no hard cone outline) */
+      float v=smoothstep(0.0,0.35,vUv.y)*smoothstep(1.0,0.5,vUv.y);
+      float fl=0.9+0.1*sin(uTime*1.5+vUv.y*8.0);
       gl_FragColor=vec4(uColor, a*v*uIntensity*fl);
     }`,
   transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide
 });
 const cones=[];
 for(const cx of [-0.22,0,0.22]){
-  const c=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.30,0.15,24,1,true), coneMat);
-  c.position.set(cx, TANK.h+0.055, 0); scene.add(c); cones.push(c);
+  const c=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.06,0.16,20,1,true), coneMat);
+  c.position.set(cx, TANK.h+0.05, 0); scene.add(c); cones.push(c);
 }
 
 /* ================================================================
@@ -747,41 +753,44 @@ function addCollider(x,y,z,r){ colliders.push({pos:new THREE.Vector3(x,y,z), r})
 /* rocks */
 /* varied stone types: slate (flat), river (rounded), jagged (rough) */
 const rockMats={
-  slate:new THREE.MeshStandardMaterial({ map:rockTex, color:0x4a4a50, roughness:0.75, metalness:0.06, flatShading:true }),
-  river:new THREE.MeshStandardMaterial({ map:rockTex, color:0x8a7a62, roughness:0.65, metalness:0.03 }),
-  jagged:new THREE.MeshStandardMaterial({ map:rockTex, color:0x6b665c, roughness:0.9, metalness:0.04, flatShading:true })
+  slate:new THREE.MeshStandardMaterial({ map:rockTex, bumpMap:rockTex, bumpScale:0.002, color:0x5a5a60, roughness:0.7, metalness:0.05 }),
+  river:new THREE.MeshStandardMaterial({ map:rockTex, bumpMap:rockTex, bumpScale:0.0015, color:0x9a8a70, roughness:0.55, metalness:0.02 }),
+  jagged:new THREE.MeshStandardMaterial({ map:rockTex, bumpMap:rockTex, bumpScale:0.003, color:0x7a746a, roughness:0.85, metalness:0.03 }),
+  moss:new THREE.MeshStandardMaterial({ map:rockTex, bumpMap:rockTex, bumpScale:0.003, color:0x5a6a4a, roughness:0.9, metalness:0.02 })
 };
-for(const k in rockMats) patchMaterial(rockMats[k],{caustic:true,causticStrength:0.15});
-function makeRock(r, seed, x, z, kind='jagged'){
-  const geo=new THREE.IcosahedronGeometry(r,2);
+for(const k in rockMats) patchMaterial(rockMats[k],{caustic:true,causticStrength:0.12});
+function makeRock(r, seed, x, z, kind='river'){
+  const geo=new THREE.IcosahedronGeometry(r,3);   // smooth, rounded
   const p=geo.attributes.position; const v=new THREE.Vector3();
-  const disp = kind==='river'?0.16 : (kind==='slate'?0.28:0.50);
-  const fine = kind==='jagged'?0.20:0.05;
+  const disp = kind==='river'?0.10 : (kind==='slate'?0.16:0.22);
+  const fine = kind==='jagged'?0.10:0.04;
   for(let i=0;i<p.count;i++){
     v.fromBufferAttribute(p,i);
     const n=fbm(v.x*3.1+seed, v.y*3.1+v.z*2.3+seed*1.7);
     const n2=fbm(v.x*7.0+seed*2.0, v.z*7.0-v.y*5.0);
     v.multiplyScalar(1+disp*(n-0.5)*2 + fine*(n2-0.5)*2);
-    v.y *= kind==='slate'?0.32 : (kind==='river'?0.78:0.68);
+    v.y *= kind==='slate'?0.40 : (kind==='river'?0.80:0.72);
     p.setXYZ(i,v.x,v.y,v.z);
   }
-  geo.computeVertexNormals();
+  geo.computeVertexNormals();   // smooth shading, no facets
   const m=new THREE.Mesh(geo,rockMats[kind]);
-  m.position.set(x, substrateY(x,z)+r*(kind==='slate'?0.18:0.35), z);
+  m.position.set(x, substrateY(x,z)+r*(kind==='slate'?0.20:0.40), z);
   m.rotation.y=rand(6.28);
-  if(kind==='slate') m.rotation.z=rand(-0.2,0.2);
+  if(kind==='slate') m.rotation.z=rand(-0.15,0.15);
   m.castShadow=true; m.receiveShadow=true; scene.add(m);
   addCollider(x, m.position.y, z, r*0.85);
   return m;
 }
-makeRock(0.085, 1.3, -0.34, -0.10, 'jagged');
-makeRock(0.062, 2.7,  0.30,  0.06, 'river');
-makeRock(0.115, 4.1,  0.02, -0.16, 'jagged');
-makeRock(0.070, 5.9, -0.16,  0.14, 'slate');
-makeRock(0.055, 7.3,  0.42, -0.12, 'river');
-makeRock(0.040, 8.8, -0.44,  0.06, 'slate');
-makeRock(0.050, 9.4,  0.16,  0.10, 'river');
-makeRock(0.034,10.2, -0.05,  0.16, 'jagged');
+makeRock(0.055, 1.3, -0.34, -0.10, 'jagged');
+makeRock(0.040, 2.7,  0.30,  0.06, 'river');
+makeRock(0.075, 4.1,  0.02, -0.16, 'moss');
+makeRock(0.045, 5.9, -0.16,  0.14, 'slate');
+makeRock(0.036, 7.3,  0.42, -0.12, 'river');
+makeRock(0.028, 8.8, -0.44,  0.06, 'slate');
+makeRock(0.034, 9.4,  0.16,  0.10, 'river');
+makeRock(0.024,10.2, -0.05,  0.16, 'jagged');
+makeRock(0.020,11.5,  0.24, -0.06, 'river');
+makeRock(0.018,12.1, -0.26,  0.02, 'moss');
 
 /* driftwood: custom tapered tube along a curve */
 const woodMat=new THREE.MeshStandardMaterial({ map:woodTex, color:0x8a6844, roughness:0.8, metalness:0.05 });
@@ -874,19 +883,27 @@ function plantCluster(x, z, n, lenFn, widFn, curveFn, color, yOff=0){
   addCollider(x, substrateY(x,z)+0.03, z, 0.035);
 }
 /* Vallisneria ribbons (kept inside glass + below waterline) */
-plantCluster(-0.46,-0.16, 18, ()=>rand(0.20,0.36), ()=>rand(0.010,0.018), ()=>rand(-0.4,0.4), 0x2f8f3f);
-plantCluster( 0.46,-0.18, 16, ()=>rand(0.18,0.34), ()=>rand(0.010,0.017), ()=>rand(-0.4,0.4), 0x359a45);
-plantCluster(-0.42, 0.12, 13, ()=>rand(0.16,0.28), ()=>rand(0.009,0.015), ()=>rand(-0.4,0.4), 0x2f8f3f);
-plantCluster( 0.40, 0.14, 12, ()=>rand(0.14,0.26), ()=>rand(0.009,0.015), ()=>rand(-0.4,0.4), 0x359a45);
-/* Anubias broad leaves on driftwood */
-plantCluster(-0.28,-0.06, 7, ()=>rand(0.05,0.09), ()=>rand(0.028,0.044), ()=>rand(-0.15,0.15), 0x1f6a35, 0.07);
-plantCluster(-0.14, 0.04, 6, ()=>rand(0.04,0.08), ()=>rand(0.026,0.040), ()=>rand(-0.15,0.15), 0x237a3a, 0.12);
-/* Java fern on rocks */
-plantCluster( 0.02,-0.16, 9, ()=>rand(0.10,0.18), ()=>rand(0.010,0.015), ()=>rand(-0.6,0.6), 0x1c5f2c, 0.08);
-plantCluster( 0.30, 0.06, 7, ()=>rand(0.08,0.15), ()=>rand(0.010,0.014), ()=>rand(-0.6,0.6), 0x226b31, 0.04);
-/* extra foreground grass for depth */
-plantCluster( 0.16, 0.16, 6, ()=>rand(0.08,0.14), ()=>rand(0.006,0.010), ()=>rand(-0.4,0.4), 0x2f8f3f);
-plantCluster(-0.10, 0.17, 6, ()=>rand(0.07,0.13), ()=>rand(0.006,0.010), ()=>rand(-0.4,0.4), 0x359a45);
+/* All plants rooted in the substrate (yOff=0) — none float. Real-species palette. */
+/* Vallisneria — tall ribbon grass, back corners */
+plantCluster(-0.46,-0.16, 16, ()=>rand(0.20,0.36), ()=>rand(0.010,0.018), ()=>rand(-0.4,0.4), 0x2f8f3f);
+plantCluster( 0.46,-0.18, 14, ()=>rand(0.18,0.34), ()=>rand(0.010,0.017), ()=>rand(-0.4,0.4), 0x359a45);
+plantCluster(-0.42, 0.12, 11, ()=>rand(0.16,0.28), ()=>rand(0.009,0.015), ()=>rand(-0.4,0.4), 0x2f8f3f);
+/* Amazon Sword — broad lance leaves */
+plantCluster(-0.20,-0.12, 8, ()=>rand(0.12,0.20), ()=>rand(0.030,0.050), ()=>rand(-0.2,0.2), 0x2f7a35);
+plantCluster( 0.22,-0.10, 7, ()=>rand(0.10,0.18), ()=>rand(0.028,0.046), ()=>rand(-0.2,0.2), 0x35843c);
+/* Rotala / Red Ludwigia — red-pink stem plants */
+plantCluster( 0.34, 0.10, 10, ()=>rand(0.10,0.18), ()=>rand(0.008,0.014), ()=>rand(-0.3,0.3), 0xb05050);
+plantCluster(-0.34, 0.06, 9, ()=>rand(0.09,0.16), ()=>rand(0.008,0.013), ()=>rand(-0.3,0.3), 0xc06868);
+/* Cryptocoryne — wavy brown-green broad leaves */
+plantCluster( 0.06, 0.14, 7, ()=>rand(0.08,0.14), ()=>rand(0.020,0.034), ()=>rand(-0.5,0.5), 0x6a7a3a);
+plantCluster(-0.08,-0.02, 6, ()=>rand(0.07,0.12), ()=>rand(0.018,0.030), ()=>rand(-0.5,0.5), 0x7a6a3a);
+/* Java Fern — narrow dark leaves on rock base */
+plantCluster( 0.02,-0.16, 8, ()=>rand(0.10,0.18), ()=>rand(0.010,0.015), ()=>rand(-0.6,0.6), 0x1c5f2c);
+/* Anubias — broad dark rounded leaves at driftwood base */
+plantCluster(-0.28,-0.06, 6, ()=>rand(0.05,0.09), ()=>rand(0.028,0.044), ()=>rand(-0.15,0.15), 0x1f6a35);
+/* Dwarf Hairgrass — fine bright carpet spikes */
+plantCluster( 0.16, 0.16, 14, ()=>rand(0.06,0.12), ()=>rand(0.003,0.005), ()=>rand(-0.3,0.3), 0x4fa050);
+plantCluster(-0.10, 0.17, 12, ()=>rand(0.05,0.11), ()=>rand(0.003,0.005), ()=>rand(-0.3,0.3), 0x55aa55);
 
 /* ================================================================
    8b. CLEANUP CREW — snails + shrimp (living ecosystem)
@@ -937,7 +954,7 @@ function updateCrew(dt,t){
   }
   for(const sh of shrimps){
     sh.dart-=dt;
-    if(sh.dart<=0 && Math.random()<0.005){ sh.dart=0.4; const a=rand(6.28); sh.dir.set(Math.sin(a),0,Math.cos(a)); sh.g.rotation.y=a; }
+    if(sh.dart<=0 && Math.random()<0.002){ sh.dart=0.4; const a=rand(6.28); sh.dir.set(Math.sin(a),0,Math.cos(a)); sh.g.rotation.y=a; }
     const sp = sh.dart>0? 0.06 : 0.008;
     sh.g.position.addScaledVector(sh.dir, sp*dt);
     sh.g.position.x=clamp(sh.g.position.x,-0.5,0.5); sh.g.position.z=clamp(sh.g.position.z,-0.2,0.2);
@@ -1090,7 +1107,7 @@ function skinWeights(t){
   const n=BONE_TS.length-1; return [n,n,1,0];
 }
 function buildBodyGeometry(L,H,W,cfg){
-  const radial=20, segs=36;
+  const radial=28, segs=48;
   const pos=[], uv=[], sIdx=[], sW=[], idx=[];
   for(let i=0;i<=segs;i++){
     const t=i/segs, hp=PROFILES[cfg.key].h(t), wp=PROFILES[cfg.key].w(t);
@@ -1274,26 +1291,25 @@ function buildFish(key){
   gillL.position.set(-0.5*W*L*wp(0.17)*0.95, 0, L*(BONE_TS[0]-0.17));
   bones[0].add(gillR,gillL);
 
-  /* eyes — on the sides of the head, gaze forward along swim direction */
-  const eR=0.5*H*L*hp(0.12)*0.16;
-  const ringGeo=new THREE.SphereGeometry(eR,14,12);
-  const ringMat=new THREE.MeshStandardMaterial({ color:0xb0b0a8, roughness:0.3, metalness:0.5 });
-  const irisGeo=new THREE.SphereGeometry(eR*0.72,12,10);
-  const irisMat=new THREE.MeshStandardMaterial({ color:cfg.eyeColor||0x1a1410, roughness:0.35, metalness:0.2 });
-  const pupGeo=new THREE.SphereGeometry(eR*0.42,10,8);
-  const pupMat=new THREE.MeshStandardMaterial({ color:0x050505, roughness:0.1 });
-  const hlGeo=new THREE.SphereGeometry(eR*0.15,6,6);
+  /* eyes — embedded in the head sides, dark iris + silvery rim, gaze forward-outward */
+  const eR=0.5*H*L*hp(0.12)*0.15;
+  const rimGeo=new THREE.SphereGeometry(eR*1.12,14,12);
+  const rimMat=new THREE.MeshStandardMaterial({ color:0xb8b8b0, roughness:0.3, metalness:0.6 });
+  const irisGeo=new THREE.SphereGeometry(eR,14,12);
+  const irisMat=new THREE.MeshStandardMaterial({ color:cfg.eyeColor||0x1a1410, roughness:0.25, metalness:0.4 });
+  const pupGeo=new THREE.SphereGeometry(eR*0.48,10,8);
+  const pupMat=new THREE.MeshStandardMaterial({ color:0x000000, roughness:0.05 });
+  const hlGeo=new THREE.SphereGeometry(eR*0.13,6,6);
   const hlMat=new THREE.MeshBasicMaterial({ color:0xffffff });
   const eyes=[];
   for(const sx of [1,-1]){
     const eg=new THREE.Group();
-    const ring=new THREE.Mesh(ringGeo,ringMat);
-    const iris=new THREE.Mesh(irisGeo,irisMat); iris.position.set(sx*eR*0.35,0,eR*0.45);
-    const pup=new THREE.Mesh(pupGeo,pupMat);  pup.position.set(sx*eR*0.45,0,eR*0.62);
-    const hl=new THREE.Mesh(hlGeo,hlMat);    hl.position.set(sx*eR*0.28,eR*0.16,eR*0.80);
-    eg.add(ring,iris,pup,hl);
-    eg.position.set(sx*0.5*W*L*wp(0.12)*0.86, 0.5*H*L*hp(0.12)*0.10, L*(BONE_TS[0]-0.12));
-    eg.scale.set(0.7,1,1);
+    const rim=new THREE.Mesh(rimGeo,rimMat);  rim.scale.set(0.45,1,1);
+    const iris=new THREE.Mesh(irisGeo,irisMat); iris.scale.set(0.5,1,1); iris.position.set(sx*eR*0.18,0,eR*0.10);
+    const pup=new THREE.Mesh(pupGeo,pupMat);  pup.scale.set(0.5,1,1);  pup.position.set(sx*eR*0.34,0,eR*0.28);
+    const hl=new THREE.Mesh(hlGeo,hlMat);    hl.position.set(sx*eR*0.30,eR*0.05,eR*0.55);
+    eg.add(rim,iris,pup,hl);
+    eg.position.set(sx*0.5*W*L*wp(0.12)*0.80, 0.5*H*L*hp(0.12)*0.05, L*(BONE_TS[0]-0.13));
     bones[0].add(eg); eyes.push(eg);
   }
 
@@ -1311,6 +1327,30 @@ function buildFish(key){
   inner.position.z=0.002;
   mouthGroup.add(upper, lowerPivot, inner);
   bones[0].add(mouthGroup);
+
+  /* gill detail: thin dark vertical line low on the operculum (no eyebrow arcs) */
+  const slitMat=new THREE.MeshStandardMaterial({ color:0x201818, roughness:0.7 });
+  for(const sx of [1,-1]){
+    const slit=new THREE.Mesh(new THREE.BoxGeometry(0.0006, 0.5*H*L*hp(0.17)*0.55, 0.0012), slitMat);
+    slit.position.set(sx*0.5*W*L*wp(0.17)*0.98, -0.5*H*L*hp(0.17)*0.30, L*(BONE_TS[0]-0.18));
+    bones[0].add(slit);
+  }
+  /* nostrils */
+  const nosMat=new THREE.MeshStandardMaterial({ color:0x181410, roughness:0.6 });
+  for(const sx of [1,-1]){
+    const n=new THREE.Mesh(new THREE.SphereGeometry(0.5*H*L*hp(0.06)*0.05,6,6), nosMat);
+    n.position.set(sx*0.5*W*L*wp(0.06)*0.4, 0.5*H*L*hp(0.06)*0.5, L*(BONE_TS[0]-0.06));
+    bones[0].add(n);
+  }
+  /* barbels for bottom-feeders (Corydoras) */
+  if(cfg.bottom){
+    for(const sx of [1,-1]){
+      const b=new THREE.Mesh(new THREE.ConeGeometry(0.0008, L*0.07, 6), slitMat);
+      b.rotation.x=Math.PI*0.75; b.rotation.z=sx*0.3;
+      b.position.set(sx*0.5*W*L*wp(0.04)*0.5, -0.5*H*L*hp(0.04)*0.4, L*(BONE_TS[0]-0.02));
+      bones[0].add(b);
+    }
+  }
 
   return { group, mesh, bones, L, pectorals:[pecR,pecL], gills:[gillR,gillL],
            mouth:{upper, lower:lowerPivot}, tailFin:tail, dorsalFin:dorsal, cfg };
@@ -1364,10 +1404,11 @@ class Fish{
       acc.addScaledVector(_coh,cfg.coh);
     }
 
-    /* --- wander --- */
-    acc.x+=Math.sin(t*0.6+this.phase*3.1)*0.020;
-    acc.z+=Math.cos(t*0.5+this.phase*2.3)*0.020;
-    acc.y+=Math.sin(t*0.4+this.phase)*0.008;
+    /* --- gentle wander (calm) --- */
+    const sp0=cfg.speed*0.85;
+    acc.x+=Math.sin(t*0.5+this.phase*3.1)*0.012;
+    acc.z+=Math.cos(t*0.4+this.phase*2.3)*0.012;
+    acc.y+=Math.sin(t*0.35+this.phase)*0.005;
 
     /* --- bounds (predictive look-ahead) --- */
     const m=0.045+this.L*0.5;
@@ -1406,7 +1447,7 @@ class Fish{
       seeking=true;
       const desired=_desired.copy(target.pos).sub(pos);
       const dist=desired.length();
-      desired.normalize().multiplyScalar(cfg.speed*2.4);
+      desired.normalize().multiplyScalar(sp0*2.2);
       acc.add(_v2.copy(desired).sub(vel).multiplyScalar(3.2));
       if(dist<0.026+this.L*0.28){
         target.eat(); this.mouthOpen=1; this.wiggle=1; vel.multiplyScalar(0.25);
@@ -1416,13 +1457,13 @@ class Fish{
     /* --- startle dart --- */
     if(this.dart>0){
       this.dart-=dt;
-      acc.addScaledVector(this.dartDir, 2.6*this.dart);
+      acc.addScaledVector(this.dartDir, 1.8*this.dart);
     }
 
     /* --- integrate --- */
     vel.addScaledVector(acc,dt);
-    const maxS=cfg.speed*(this.dart>0?3.4:(seeking?2.0:1.25));
-    const minS=cfg.speed*0.35;
+    const maxS=sp0*(this.dart>0?2.6:(seeking?1.8:1.15));
+    const minS=sp0*0.30;
     const sp=vel.length();
     if(sp>maxS) vel.multiplyScalar(maxS/sp);
     else if(sp<minS && sp>1e-5) vel.multiplyScalar(minS/sp);
@@ -1455,7 +1496,7 @@ class Fish{
     this.mesh.rotation.z=this.bank;
 
     /* --- animation --- */
-    const speedNorm=clamp(vel.length()/(cfg.speed*1.6),0,1.5);
+    const speedNorm=clamp(vel.length()/(sp0*1.6),0,1.5);
     this.swimPhase+=dt*(3.5+speedNorm*11.0);
     const amp=0.10+speedNorm*0.24;
     for(let i=0;i<this.bones.length;i++){
@@ -1643,15 +1684,15 @@ let particleGeo, particlePos;
 ================================================================ */
 let pumpOn=true, lightMode='day';
 const DAY={ hemi:0.30, spot:1.2, spotColor:new THREE.Color(0xf2f8ff), led:1.3,
-  ledColor:new THREE.Color(0xeaf6ff), cone:0.08, coneColor:new THREE.Color(0xbfe8ff),
-  caustic:0.28, causticColor:new THREE.Color(0xbfe8ff),
+  ledColor:new THREE.Color(0xeaf6ff), cone:0.035, coneColor:new THREE.Color(0xbfe8ff),
+  caustic:0.20, causticColor:new THREE.Color(0xbfe8ff),
   waterDeep:new THREE.Color(0x07303f), waterShallow:new THREE.Color(0x2a8fb0),
-  bloom:0.18, bg:new THREE.Color(0x060a0e), exposure:0.82, glow:0.18 };
+  bloom:0.12, bg:new THREE.Color(0x060a0e), exposure:0.82, glow:0.18 };
 const MOON={ hemi:0.08, spot:0.7, spotColor:new THREE.Color(0x4477ff), led:0.6,
-  ledColor:new THREE.Color(0x3366ff), cone:0.05, coneColor:new THREE.Color(0x4477ff),
-  caustic:0.18, causticColor:new THREE.Color(0x66aaff),
+  ledColor:new THREE.Color(0x3366ff), cone:0.02, coneColor:new THREE.Color(0x4477ff),
+  caustic:0.14, causticColor:new THREE.Color(0x66aaff),
   waterDeep:new THREE.Color(0x020a18), waterShallow:new THREE.Color(0x0a2a4a),
-  bloom:0.28, bg:new THREE.Color(0x02040a), exposure:0.78, glow:0.10 };
+  bloom:0.20, bg:new THREE.Color(0x02040a), exposure:0.78, glow:0.10 };
 const lightCur={ hemi:DAY.hemi, spot:DAY.spot, led:DAY.led, cone:DAY.cone,
   caustic:DAY.caustic, bloom:DAY.bloom, exposure:DAY.exposure, glow:DAY.glow };
 const _c=new THREE.Color();
